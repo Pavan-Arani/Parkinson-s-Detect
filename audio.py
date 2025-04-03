@@ -85,7 +85,7 @@ def train_model(data, labels):
 
 
 if __name__ == "__main__":
-    audio_directory = "C:\\Users\\vikas\\Downloads\\cv-corpus-19.0-delta-2024-09-13\\en\\clips"
+    audio_directory = ""
     if not os.path.exists(audio_directory):
         print(f"Directory not found: {audio_directory}")
     else:
