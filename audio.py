@@ -1,84 +1,101 @@
-import os
-import numpy as np
 import librosa
+import numpy as np
+import os
 import pandas as pd
-from pydub import AudioSegment
-from multiprocessing import Pool, cpu_count
 from sklearn.model_selection import train_test_split
-from sklearn.decomposition import PCA
-from lightgbm import LGBMClassifier
-from sklearn.metrics import accuracy_score
-import parselmouth
-
-dataset_dir = "C:\\path\\to\\dataset"
-
-def convert_mp3_to_wav(mp3_path):
-    wav_path = mp3_path.replace(".mp3", ".wav")
-    if not os.path.exists(wav_path):  
-        audio = AudioSegment.from_mp3(mp3_path)
-        audio.export(wav_path, format="wav")
-    return wav_path
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.metrics import accuracy_score, classification_report
+from concurrent.futures import ThreadPoolExecutor
 
 
-def extract_features(audio_file):
-    audio_path = os.path.join(dataset_dir, audio_file)
-
-    if audio_file.endswith(".mp3"):
-        audio_path = convert_mp3_to_wav(audio_path)
-
+def extract_features(audio_path):
+    """Extract relevant features for Parkinson's detection from an audio file."""
     try:
-        y, sr = librosa.load(audio_path, sr=22050, duration=5)  
-        mfccs = np.mean(librosa.feature.mfcc(y=y, sr=sr, n_mfcc=13).T, axis=0)
-
-        sound = parselmouth.Sound(audio_path)
-        pitch = sound.to_pitch()
-        f0_mean = np.mean(pitch.selected_array['frequency']) if pitch else 0
-        jitter = sound.to_jitter() if sound.to_jitter() else 0
-        shimmer = sound.to_shimmer() if sound.to_shimmer() else 0
-        hnr = sound.to_harmonicity() if sound.to_harmonicity() else 0
-
-        label = 1 if "parkinsons" in audio_file.lower() else 0  
-        return [audio_file] + list(mfccs) + [f0_mean, jitter, shimmer, hnr, label]
-
+        y, sr = librosa.load(audio_path, sr=None, duration=5)  # Limit to first 5 seconds for speed
+        features = {}
+        
+        # Pitch-related features
+        f0 = librosa.yin(y, fmin=75, fmax=600)
+        valid_f0 = f0[~np.isnan(f0)]
+        
+        if len(valid_f0) > 0:
+            features['pitch_mean'] = np.mean(valid_f0)
+            features['pitch_std'] = np.std(valid_f0)
+            features['pitch_range'] = np.max(valid_f0) - np.min(valid_f0)
+        else:
+            features['pitch_mean'] = features['pitch_std'] = features['pitch_range'] = 0
+        
+        # Jitter (voice instability measure)
+        features['jitter'] = np.mean(np.abs(np.diff(valid_f0))) if len(valid_f0) > 1 else 0
+        
+        # Spectral centroid
+        spectral_centroids = librosa.feature.spectral_centroid(y=y, sr=sr)[0]
+        features['spectral_centroid_mean'] = np.mean(spectral_centroids)
+        features['spectral_centroid_std'] = np.std(spectral_centroids)
+        
+        # Speech rate
+        rms = librosa.feature.rms(y=y)[0]
+        speech_threshold = np.percentile(rms, 70)
+        speech_frames = np.sum(rms > speech_threshold)
+        features['speech_rate'] = speech_frames / len(rms)
+        
+        # MFCC features (first coefficient)
+        mfcc = librosa.feature.mfcc(y=y, sr=sr, n_mfcc=2)  # Reduce MFCC count for speed
+        features['mfcc1_mean'] = np.mean(mfcc[0])
+        
+        return features
     except Exception as e:
-        print(f"Error processing {audio_file}: {e}")
+        print(f"Error processing {audio_path}: {str(e)}")
         return None
 
 
-audio_files = [f for f in os.listdir(dataset_dir) if f.endswith((".mp3", ".wav"))]
+def process_directory_with_threads(audio_dir, n_threads=4):
+    """Process files using multithreading to reduce CPU usage."""
+    audio_files = [f for f in os.listdir(audio_dir) if f.lower().endswith(('.mp3', '.wav', '.ogg'))]
+    file_paths = [os.path.join(audio_dir, f) for f in audio_files]
+    
+    print(f"Processing {len(audio_files)} audio files...")
+
+    with ThreadPoolExecutor(max_workers=n_threads) as executor:
+        results = list(executor.map(extract_features, file_paths))
+    
+    data = []
+    for idx, (file, features) in enumerate(zip(audio_files, results)):
+        print(f"Processed file {idx+1}/{len(audio_files)}: {file}")  # Track progress
+        if features:
+            features['file_name'] = file  # Add filename for reference
+            data.append(features)
+    
+    print("Feature extraction complete.")
+    return pd.DataFrame(data)
 
 
-with Pool(cpu_count() - 1) as pool:
-    data = pool.map(extract_features, audio_files)
+def train_model(data, labels):
+    """Train a machine learning model on extracted features."""
+    X_train, X_test, y_train, y_test = train_test_split(data, labels, test_size=0.2, random_state=42)
+    model = RandomForestClassifier(n_estimators=100, random_state=42, n_jobs=2)  # Limit parallel jobs
+    model.fit(X_train, y_train)
+    
+    y_pred = model.predict(X_test)
+    print("\nModel Evaluation:")
+    print(classification_report(y_test, y_pred))
+    print("Accuracy:", accuracy_score(y_test, y_pred))
+    
+    return model
 
 
-data = [d for d in data if d is not None]
-
-
-columns = ["filename"] + [f"mfcc_{i}" for i in range(13)] + ["f0_mean", "jitter", "shimmer", "hnr", "label"]
-df = pd.DataFrame(data, columns=columns)
-
-
-df.to_parquet("parkinsons_audio_features.parquet", index=False)
-
-
-df = pd.read_parquet("parkinsons_audio_features.parquet")
-
-X = df.drop(columns=["filename", "label"])
-y = df["label"]
-
-pca = PCA(n_components=10) 
-X_reduced = pca.fit_transform(X)
-
-X_train, X_test, y_train, y_test = train_test_split(X_reduced, y, test_size=0.2, random_state=42)
-
-clf = LGBMClassifier(n_estimators=100, random_state=42)
-clf.fit(X_train, y_train)
-
-y_pred = clf.predict(X_test)
-accuracy = accuracy_score(y_test, y_pred)
-print(f"Model Accuracy: {accuracy:.2f}")
-
-new_sample = np.array(X_test[0]).reshape(1, -1)
-prediction = clf.predict(new_sample)
-print(f"Prediction for sample: {'Parkinson' if prediction[0] == 1 else 'Healthy'}")
+if __name__ == "__main__":
+    audio_directory = "C:\\Users\\vikas\\Downloads\\cv-corpus-19.0-delta-2024-09-13\\en\\clips"
+    if not os.path.exists(audio_directory):
+        print(f"Directory not found: {audio_directory}")
+    else:
+        print(f"Analyzing audio files in: {audio_directory}")
+        df = process_directory_with_threads(audio_directory)
+        
+        # Assuming we have labels for training (1 = Parkinson's, 0 = Healthy)
+        labels = [0] * len(df)  # Placeholder: Replace with real labels
+        
+        if len(df) > 0:
+            model = train_model(df.drop(columns=['file_name']), labels)
+        else:
+            print("No valid audio features extracted.")
