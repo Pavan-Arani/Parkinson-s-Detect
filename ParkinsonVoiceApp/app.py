@@ -11,7 +11,6 @@ from sklearn.preprocessing import StandardScaler
 # Set page config
 st.set_page_config(
     page_title="Parkinson's Voice Detection",
-    page_icon="🎤",
     layout="wide"
 )
 
