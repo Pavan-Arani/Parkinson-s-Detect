@@ -160,7 +160,7 @@ def main():
                             }).sort_values('Importance', ascending=False).head(10)
                             
                             st.write("Top influential features:")
-                            st.dataframe(importances)
+                            st.dataframe(importances.reset_index(drop=True), use_container_width=True, hide_index=True)
                         
                         # Show raw feature values
                         if st.checkbox("Show extracted features"):
@@ -176,4 +176,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
