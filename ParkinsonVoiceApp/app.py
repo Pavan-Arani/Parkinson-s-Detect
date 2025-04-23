@@ -75,7 +75,7 @@ def extract_features(audio_path):
 
 # Streamlit UI
 def main():
-    st.title("🎤 Parkinson's Disease Detection from Voice")
+    st.title("Parkinson's Disease Detection from Voice")
     st.markdown("""
     This app analyzes voice recordings to detect potential signs of Parkinson's disease.
     Upload an audio file (.wav, .mp3) to get a prediction.
