@@ -1,6 +1,6 @@
 # Parkinsons Detect
 
-2nd Place during AIMD Spring 2025 Presentation Night, UTD
+2nd Place team during AIMD Spring 2025 Presentation Night, UTD
 
 Credit - Romita Veeramallu, Shariq Hasan, Rajat , Pavan Arani, Krithikaa Muthukumar, Vikas Mariyappa
 
