@@ -7,9 +7,7 @@ Credit - Romita Veeramallu, Shariq Hasan, Rajat , Pavan Arani, Krithikaa Muthuku
 
 ## What's the Goal
 
-A low-cost, and accessible tool to support pre-clinical screening. 
-
-A voice-based machine learning tool built to assist in the early detection of Parkinson’s Disease by analyzing subtle vocal biomarkers.
+A low-cost, and accessible tool to support pre-clinical screening. This voice-based machine learning tool built to assist in the early detection of Parkinson’s Disease by analyzing subtle vocal biomarkers.
 Designed as a semester-long project by a team of 6, the system decodes subtle vocal disturbances spotted in early diagnosis.
 
 ## How does it work
